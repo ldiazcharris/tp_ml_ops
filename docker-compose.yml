@@ -9,6 +9,7 @@ volumes:
   postgres_mlflow_data:
   postgres_airflow_data:
   minio_data:
+  redis_data:
 
 services:
   # ---- MLflow infrastructure ----
@@ -67,8 +68,8 @@ services:
 
   mlflow:
     build:
-      context: .
-      dockerfile: ./dockerfiles/Dockerfile.mlflow
+      context: ./dockerfiles/
+      dockerfile: dockerfiles/Dockerfile.mlflow
     container_name: mlflow_server
     hostname: mlflow
     restart: always
@@ -107,8 +108,8 @@ services:
 
   airflow-init:
     build:
-      context: .
-      dockerfile: ./dockerfiles/Dockerfile.airflow
+      context: ./dockerfiles/
+      dockerfile: dockerfiles/Dockerfile.airflow
     container_name: airflow_init
     depends_on:
       - postgres_airflow
@@ -130,8 +131,8 @@ services:
 
   airflow-webserver:
     build:
-      context: .
-      dockerfile: ./dockerfiles/Dockerfile.airflow
+      context: ./dockerfiles/
+      dockerfile: dockerfiles/Dockerfile.airflow
     container_name: airflow_webserver
     restart: always
     depends_on:
@@ -154,8 +155,8 @@ services:
 
   airflow-scheduler:
     build:
-      context: .
-      dockerfile: ./dockerfiles/Dockerfile.airflow
+      context: ./dockerfiles/
+      dockerfile: dockerfiles/Dockerfile.airflow
     container_name: airflow_scheduler
     restart: always
     depends_on:
@@ -173,3 +174,62 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       MLFLOW_S3_ENDPOINT_URL: http://s3:9000
     command: scheduler
+
+  # ---- Redis ----
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    hostname: redis
+    restart: always
+    networks:
+      - ml_pipeline_net
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # ---- FastAPI ----
+  api:
+    build:
+      context: ./dockerfiles/
+      dockerfile: dockerfiles/Dockerfile.fastapi
+    container_name: fastapi_server
+    hostname: api
+    restart: always
+    depends_on:
+      - mlflow
+      - redis
+    ports:
+      - "8800:8800"
+    networks:
+      - ml_pipeline_net
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://s3:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MODEL_NAME: wine_quality_model
+
+  # ---- Streamlit ----
+  streamlit:
+    build:
+      context: ./dockerfiles/
+      dockerfile: dockerfiles/Dockerfile.streamlit
+    container_name: streamlit_app
+    hostname: streamlit
+    restart: always
+    depends_on:
+      - api
+      - mlflow
+    ports:
+      - "8501:8501"
+    networks:
+      - ml_pipeline_net
+    environment:
+      API_URL: http://api:8800
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://s3:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
