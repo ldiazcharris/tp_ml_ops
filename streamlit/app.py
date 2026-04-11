@@ -1,11 +1,5 @@
-"""
-Interfaz Streamlit para el modelo de calidad de vino.
-
-Permite ingresar features, obtener predicciones vía la API,
-y visualizar métricas del modelo desde MLflow.
-"""
-
 import os
+from datetime import datetime, timezone
 
 import mlflow
 import requests
@@ -19,7 +13,7 @@ st.title("Wine Quality Predictor")
 
 tab_predict, tab_metrics = st.tabs(["Prediccion", "Metricas del Modelo"])
 
-# --- Tab: Prediccion ---
+# Prediccion
 with tab_predict:
     st.header("Ingrese las caracteristicas del vino")
 
@@ -88,14 +82,12 @@ with tab_predict:
         except requests.ConnectionError:
             st.error("No se pudo conectar con la API. Verifique que este corriendo.")
 
-# --- Tab: Metricas ---
+# Metricas
 with tab_metrics:
     st.header("Metricas del ultimo entrenamiento")
 
     try:
-        os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv(
-            "MLFLOW_S3_ENDPOINT_URL", "http://s3:9000"
-        )
+        os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://s3:9000")
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         client = mlflow.tracking.MlflowClient()
 
@@ -125,8 +117,13 @@ with tab_metrics:
                     for name, value in sorted(params.items()):
                         st.text(f"{name}: {value}")
 
+                start_time_ms = run.info.start_time
+                start_dt = datetime.fromtimestamp(
+                    start_time_ms / 1000, tz=timezone.utc
+                ).astimezone()
+
                 st.caption(f"Run ID: {run.info.run_id}")
-                st.caption(f"Fecha: {run.info.start_time}")
+                st.caption(f"Fecha: {start_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             else:
                 st.info("No hay runs registrados. Ejecute el DAG de entrenamiento.")
         else:

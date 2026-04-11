@@ -12,7 +12,7 @@ volumes:
   redis_data:
 
 services:
-  # ---- MLflow infrastructure ----
+  # MLflow infrastructure
   postgres_mlflow:
     image: postgres:13
     container_name: mlflow_postgres_db
@@ -89,9 +89,10 @@ services:
       --backend-store-uri postgresql://${PG_USER}:${PG_PASSWORD}@postgres_mlflow:5432/${PG_DATABASE}
       --default-artifact-root s3://${MLFLOW_BUCKET_NAME}/
       --host 0.0.0.0
+      --allowed-hosts mlflow,mlflow:5000,localhost,localhost:5001,127.0.0.1,127.0.0.1:5001
       --port 5000
 
-  # ---- Airflow infrastructure ----
+  # Airflow infrastructure
   postgres_airflow:
     image: postgres:13
     container_name: airflow_postgres_db
@@ -120,14 +121,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres_airflow:5432/${AIRFLOW_DB_NAME}
     entrypoint: /bin/bash
     command: >
-      -c 'airflow db init &&
-          airflow users create
-            --username admin
-            --password admin
-            --firstname Admin
-            --lastname User
-            --role Admin
-            --email admin@example.com'
+      -c 'airflow db init && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com'
 
   airflow-webserver:
     build:
@@ -175,7 +169,7 @@ services:
       MLFLOW_S3_ENDPOINT_URL: http://s3:9000
     command: scheduler
 
-  # ---- Redis ----
+  # Redis
   redis:
     image: redis:7-alpine
     container_name: redis_cache
@@ -188,7 +182,7 @@ services:
     volumes:
       - redis_data:/data
 
-  # ---- FastAPI ----
+  # FastAPI
   api:
     build:
       context: ./
@@ -212,7 +206,7 @@ services:
       REDIS_PORT: 6379
       MODEL_NAME: wine_quality_model
 
-  # ---- Streamlit ----
+  # Streamlit
   streamlit:
     build:
       context: ./

@@ -1,9 +1,3 @@
-"""
-API REST para servir predicciones del modelo de calidad de vino.
-
-Carga el modelo desde MLflow Model Registry y cachea predicciones en Redis.
-"""
-
 import hashlib
 import json
 import logging
@@ -49,9 +43,7 @@ class WineFeatures(BaseModel):
     proanthocyanins: float = Field(..., description="Proanthocyanins")
     color_intensity: float = Field(..., description="Color intensity")
     hue: float = Field(..., description="Hue")
-    od280_od315_of_diluted_wines: float = Field(
-        ..., description="OD280/OD315 of diluted wines"
-    )
+    od280_od315_of_diluted_wines: float = Field(..., description="OD280/OD315 of diluted wines")
     proline: float = Field(..., description="Proline")
 
 
@@ -63,6 +55,10 @@ class PredictionResponse(BaseModel):
 
 
 WINE_CLASSES = {0: "class_0", 1: "class_1", 2: "class_2"}
+
+
+def normalize_feature_name(name: str):
+    return name.replace("/", "_").replace(" ", "_")
 
 
 def get_redis():
@@ -83,9 +79,7 @@ def get_redis():
 def load_model():
     global model, scaler, feature_names
 
-    os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv(
-        "MLFLOW_S3_ENDPOINT_URL", "http://s3:9000"
-    )
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://s3:9000")
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
     try:
@@ -104,9 +98,7 @@ def load_model():
         with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
 
-        names_path = client.download_artifacts(
-            run_id, "preprocessing/feature_names.txt"
-        )
+        names_path = client.download_artifacts(run_id, "preprocessing/feature_names.txt")
         with open(names_path, "r") as f:
             feature_names = f.read().strip().split("\n")
 
@@ -158,7 +150,7 @@ def predict(features: WineFeatures):
         except Exception:
             pass
 
-    values = [features_dict[name] for name in feature_names]
+    values = [features_dict[normalize_feature_name(name)] for name in feature_names]
     X = np.array(values).reshape(1, -1)
     X_scaled = scaler.transform(X)
 

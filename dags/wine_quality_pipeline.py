@@ -1,11 +1,3 @@
-"""
-DAG de pipeline de ML para predicción de calidad de vino.
-
-Pipeline: get_data → process_data → split_dataset → train_model → evaluate_model
-
-Usa MLflow para tracking de experimentos y MinIO (S3) para almacenamiento de artefactos.
-"""
-
 import os
 from datetime import datetime
 
@@ -20,7 +12,7 @@ RANDOM_STATE = 42
 
 @dag(
     dag_id="wine_quality_pipeline",
-    description="Pipeline de entrenamiento de modelo de calidad de vino",
+    description="Pipeline de entrenamiento del modelo de calidad de vino",
     start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
@@ -28,10 +20,8 @@ RANDOM_STATE = 42
 )
 def wine_quality_pipeline():
 
-    @task.virtualenv(
-        requirements=["pandas", "scikit-learn", "boto3"],
-    )
-    def get_data() -> str:
+    @task.virtualenv(requirements=["pandas", "scikit-learn", "boto3"])
+    def get_data():
         """Descarga el dataset Wine Quality y lo sube a MinIO."""
         import os
         import pandas as pd
@@ -57,11 +47,9 @@ def wine_quality_pipeline():
 
         return s3_key
 
-    @task.virtualenv(
-        requirements=["pandas", "scikit-learn", "boto3"],
-    )
-    def process_data(s3_key: str) -> dict:
-        """Limpia el dataset: elimina duplicados y nulos."""
+    @task.virtualenv(requirements=["pandas", "scikit-learn", "boto3"])
+    def process_data(s3_key: str):
+        #Limpia el dataset
         import os
         import pandas as pd
         import boto3
@@ -97,10 +85,8 @@ def wine_quality_pipeline():
 
     @task.virtualenv(
         requirements=["pandas", "scikit-learn", "boto3"],
-        multiple_outputs=True,
-    )
-    def split_dataset(process_result: dict) -> dict:
-        """Separa en train/test y sube ambos a MinIO."""
+        multiple_outputs=True)
+    def split_dataset(process_result: dict):
         import os
         import pandas as pd
         import boto3
@@ -136,11 +122,8 @@ def wine_quality_pipeline():
             "test_rows": len(test_df),
         }
 
-    @task.virtualenv(
-        requirements=["pandas", "scikit-learn", "mlflow==2.12.2", "boto3"],
-    )
-    def train_model(split_result: dict) -> str:
-        """Entrena un RandomForestClassifier y lo registra en MLflow."""
+    @task.virtualenv(requirements=["pandas", "scikit-learn", "mlflow==2.12.2", "boto3"],)
+    def train_model(split_result: dict):
         import os
         import pandas as pd
         import mlflow
@@ -213,11 +196,8 @@ def wine_quality_pipeline():
 
         return run_id
 
-    @task.virtualenv(
-        requirements=["pandas", "scikit-learn", "mlflow==2.12.2", "boto3"],
-    )
-    def evaluate_model(run_id: str, split_result: dict) -> dict:
-        """Evalúa el modelo en el test set y loguea métricas en MLflow."""
+    @task.virtualenv(requirements=["pandas", "scikit-learn", "mlflow==2.12.2", "boto3"])
+    def evaluate_model(training_run_id: str, split_result: dict):
         import os
         import pandas as pd
         import mlflow
@@ -253,13 +233,13 @@ def wine_quality_pipeline():
         mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
 
         client = mlflow.tracking.MlflowClient()
-        scaler_path = client.download_artifacts(run_id, "preprocessing/scaler.pkl")
+        scaler_path = client.download_artifacts(training_run_id, "preprocessing/scaler.pkl")
         with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
 
         X_test_scaled = scaler.transform(X_test)
 
-        model_uri = f"runs:/{run_id}/model"
+        model_uri = f"runs:/{training_run_id}/model"
         model = mlflow.sklearn.load_model(model_uri)
 
         y_pred = model.predict(X_test_scaled)
@@ -273,7 +253,7 @@ def wine_quality_pipeline():
             "test_f1_weighted": f1_score(y_test, y_pred, average="weighted"),
         }
 
-        with mlflow.start_run(run_id=run_id):
+        with mlflow.start_run(run_id=training_run_id):
             mlflow.log_metrics(metrics)
 
             report = classification_report(y_test, y_pred, output_dict=True)
