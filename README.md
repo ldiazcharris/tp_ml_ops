@@ -1,9 +1,7 @@
-# TP ML Ops — CEIA
-
-Trabajo práctico para la materia Operaciones de Aprendizaje Automatico (ML Ops) de la Carrera de Especialización en Inteligencia Artificial (CEIA).
+# Trabajo Practico de Operaciones de Aprendizaje Automático I - 23Co2025 - CEIA - FIUBA
 
 El proyecto simula la infraestructura interna de una empresa ficticia ("ML Models and something more Inc.") que ofrece modelos de ML. 
-La plataforma utiliza Apache Airflow para orquestación de pipelines, MLflow para tracking de experimentos, MinIO como data lake (S3-compatible) y PostgreSQL como base de datos.
+La plataforma utiliza Apache Airflow para orquestación de pipelines, MLflow para tracking de experimentos, MinIO como data lake (Simula un bucket de AWS S3) y PostgreSQL como base de datos.
 
 ### Equipo
 - Ronald Uthurralt
