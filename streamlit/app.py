@@ -5,131 +5,203 @@ import mlflow
 import requests
 import streamlit as st
 
+
 API_URL = os.getenv("API_URL", "http://api:8800")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "stroke_prediction")
 
-st.set_page_config(page_title="Wine Quality Predictor", layout="wide")
-st.title("Wine Quality Predictor")
 
-tab_predict, tab_metrics = st.tabs(["Prediccion", "Metricas del Modelo"])
+def build_prediction_payload(
+    gender: str,
+    age: float,
+    hypertension: int,
+    heart_disease: int,
+    ever_married: str,
+    work_type: str,
+    residence_type: str,
+    avg_glucose_level: float,
+    bmi: float,
+    smoking_status: str,
+) -> dict:
+    return {
+        "gender": gender,
+        "age": age,
+        "hypertension": hypertension,
+        "heart_disease": heart_disease,
+        "ever_married": ever_married,
+        "work_type": work_type,
+        "residence_type": residence_type,
+        "avg_glucose_level": avg_glucose_level,
+        "bmi": bmi,
+        "smoking_status": smoking_status,
+    }
 
-# Prediccion
-with tab_predict:
-    st.header("Ingrese las caracteristicas del vino")
 
-    col1, col2, col3 = st.columns(3)
+def request_prediction(payload: dict):
+    return requests.post(f"{API_URL}/predict", json=payload, timeout=10)
+
+
+def format_run_timestamp(start_time_ms: int) -> str:
+    start_dt = datetime.fromtimestamp(start_time_ms / 1000, tz=timezone.utc)
+    return start_dt.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def get_latest_run():
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://s3:9000")
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = mlflow.tracking.MlflowClient()
+
+    experiment = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
+    if not experiment:
+        return None
+
+    runs = client.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        order_by=["start_time DESC"],
+        max_results=1,
+    )
+    return runs[0] if runs else None
+
+
+def render_prediction_result(result: dict):
+    probability = result["stroke_probability"]
+    prediction_label = result["prediction_label"]
+
+    if prediction_label == "stroke":
+        st.error(
+            f"Riesgo estimado de stroke: **{probability:.2%}** "
+            f"(threshold {result['threshold']:.2f})"
+        )
+    else:
+        st.success(
+            f"Riesgo estimado de stroke: **{probability:.2%}** "
+            f"(threshold {result['threshold']:.2f})"
+        )
+
+    st.caption(f"Version del modelo: {result['model_version']}")
+    if result.get("cached"):
+        st.info("Resultado obtenido desde cache (Redis)")
+
+    st.progress(probability, text=f"Probabilidad de stroke: {probability:.2%}")
+
+
+def render_prediction_tab():
+    st.header("Ingrese la información clínica del paciente")
+
+    col1, col2 = st.columns(2)
 
     with col1:
-        alcohol = st.number_input("Alcohol", value=13.0, step=0.1)
-        malic_acid = st.number_input("Malic Acid", value=2.0, step=0.1)
-        ash = st.number_input("Ash", value=2.3, step=0.1)
-        alcalinity_of_ash = st.number_input("Alcalinity of Ash", value=19.0, step=0.5)
-        magnesium = st.number_input("Magnesium", value=100.0, step=1.0)
+        gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+        age = st.number_input("Age", min_value=0.0, max_value=120.0, value=50.0)
+        hypertension = st.selectbox("Hypertension", [0, 1], format_func=str)
+        heart_disease = st.selectbox("Heart disease", [0, 1], format_func=str)
+        ever_married = st.selectbox("Ever married", ["Yes", "No"])
 
     with col2:
-        total_phenols = st.number_input("Total Phenols", value=2.5, step=0.1)
-        flavanoids = st.number_input("Flavanoids", value=2.5, step=0.1)
-        nonflavanoid_phenols = st.number_input(
-            "Nonflavanoid Phenols", value=0.3, step=0.05
+        work_type = st.selectbox(
+            "Work type",
+            ["Private", "Self-employed", "Govt_job", "children", "Never_worked"],
         )
-        proanthocyanins = st.number_input("Proanthocyanins", value=1.5, step=0.1)
+        residence_type = st.selectbox("Residence type", ["Urban", "Rural"])
+        avg_glucose_level = st.number_input(
+            "Average glucose level",
+            min_value=0.0,
+            value=100.0,
+            step=0.1,
+        )
+        bmi = st.number_input("BMI", min_value=0.0, value=25.0, step=0.1)
+        smoking_status = st.selectbox(
+            "Smoking status",
+            ["never smoked", "formerly smoked", "smokes", "Unknown"],
+        )
 
-    with col3:
-        color_intensity = st.number_input("Color Intensity", value=5.0, step=0.1)
-        hue = st.number_input("Hue", value=1.0, step=0.05)
-        od280 = st.number_input("OD280/OD315", value=3.0, step=0.1)
-        proline = st.number_input("Proline", value=1000.0, step=10.0)
-
-    if st.button("Predecir", type="primary"):
-        payload = {
-            "alcohol": alcohol,
-            "malic_acid": malic_acid,
-            "ash": ash,
-            "alcalinity_of_ash": alcalinity_of_ash,
-            "magnesium": magnesium,
-            "total_phenols": total_phenols,
-            "flavanoids": flavanoids,
-            "nonflavanoid_phenols": nonflavanoid_phenols,
-            "proanthocyanins": proanthocyanins,
-            "color_intensity": color_intensity,
-            "hue": hue,
-            "od280_od315_of_diluted_wines": od280,
-            "proline": proline,
-        }
+    if st.button("Predecir Riesgo", type="primary"):
+        payload = build_prediction_payload(
+            gender=gender,
+            age=age,
+            hypertension=hypertension,
+            heart_disease=heart_disease,
+            ever_married=ever_married,
+            work_type=work_type,
+            residence_type=residence_type,
+            avg_glucose_level=avg_glucose_level,
+            bmi=bmi,
+            smoking_status=smoking_status,
+        )
 
         try:
-            response = requests.post(f"{API_URL}/predict", json=payload, timeout=10)
+            response = request_prediction(payload)
             if response.status_code == 200:
-                result = response.json()
-                st.success(
-                    f"Clase predicha: **{result['prediction_label']}** "
-                    f"(clase {result['prediction']})"
-                )
-                if result.get("cached"):
-                    st.info("Resultado obtenido desde cache (Redis)")
-
-                st.subheader("Probabilidades por clase")
-                probs = result["probabilities"]
-                for cls, prob in probs.items():
-                    st.progress(prob, text=f"{cls}: {prob:.2%}")
+                render_prediction_result(response.json())
             elif response.status_code == 503:
                 st.error(
-                    "El modelo no esta cargado. "
+                    "El modelo no está cargado. "
                     "Ejecute el DAG de entrenamiento en Airflow primero."
                 )
             else:
                 st.error(f"Error: {response.text}")
         except requests.ConnectionError:
-            st.error("No se pudo conectar con la API. Verifique que este corriendo.")
+            st.error("No se pudo conectar con la API. Verifique que esté corriendo.")
 
-# Metricas
-with tab_metrics:
-    st.header("Metricas del ultimo entrenamiento")
+
+def render_metrics_tab():
+    st.header("Métricas del último entrenamiento")
 
     try:
-        os.environ["MLFLOW_S3_ENDPOINT_URL"] = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://s3:9000")
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        client = mlflow.tracking.MlflowClient()
+        run = get_latest_run()
+        if not run:
+            st.info("No hay runs registrados. Ejecute el DAG de entrenamiento.")
+            return
 
-        experiment = client.get_experiment_by_name("wine_quality")
+        metrics = run.data.metrics
+        params = run.data.params
 
-        if experiment:
-            runs = client.search_runs(
-                experiment_ids=[experiment.experiment_id],
-                order_by=["start_time DESC"],
-                max_results=1,
-            )
+        col_m1, col_m2 = st.columns(2)
 
-            if runs:
-                run = runs[0]
-                metrics = run.data.metrics
-                params = run.data.params
+        with col_m1:
+            st.subheader("Métricas")
+            for metric_name in [
+                "test_recall",
+                "test_precision",
+                "test_f1",
+                "test_f2",
+                "test_roc_auc",
+                "test_pr_auc",
+                "test_brier_score",
+            ]:
+                if metric_name in metrics:
+                    st.metric(metric_name, f"{metrics[metric_name]:.4f}")
 
-                col_m1, col_m2 = st.columns(2)
+        with col_m2:
+            st.subheader("Parámetros")
+            for name in [
+                "model_type",
+                "n_estimators",
+                "max_depth",
+                "min_samples_leaf",
+                "decision_threshold",
+                "train_rows",
+            ]:
+                if name in params:
+                    st.text(f"{name}: {params[name]}")
 
-                with col_m1:
-                    st.subheader("Metricas")
-                    for name, value in sorted(metrics.items()):
-                        st.metric(label=name, value=f"{value:.4f}")
+        st.caption(f"Run ID: {run.info.run_id}")
+        st.caption(f"Fecha: {format_run_timestamp(run.info.start_time)}")
+    except Exception as exc:
+        st.error(f"Error al conectar con MLflow: {exc}")
 
-                with col_m2:
-                    st.subheader("Parametros")
-                    for name, value in sorted(params.items()):
-                        st.text(f"{name}: {value}")
 
-                start_time_ms = run.info.start_time
-                start_dt = datetime.fromtimestamp(
-                    start_time_ms / 1000, tz=timezone.utc
-                ).astimezone()
+st.set_page_config(page_title="Stroke Risk Predictor", layout="wide")
+st.title("Stroke Risk Predictor")
+st.write(
+    "Predicción clínica del riesgo de accidente cerebrovascular a partir de "
+    "variables demográficas y antecedentes de salud."
+)
 
-                st.caption(f"Run ID: {run.info.run_id}")
-                st.caption(f"Fecha: {start_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            else:
-                st.info("No hay runs registrados. Ejecute el DAG de entrenamiento.")
-        else:
-            st.info(
-                "El experimento 'wine_quality' no existe. "
-                "Ejecute el DAG de entrenamiento."
-            )
-    except Exception as e:
-        st.error(f"Error al conectar con MLflow: {e}")
+tab_predict, tab_metrics = st.tabs(["Predicción", "Métricas del Modelo"])
+
+with tab_predict:
+    render_prediction_tab()
+
+with tab_metrics:
+    render_metrics_tab()

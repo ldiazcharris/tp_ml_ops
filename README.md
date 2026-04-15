@@ -1,18 +1,58 @@
-# TP ML Ops — CEIA
-
-Trabajo práctico para la materia Operaciones de Aprendizaje Automatico (ML Ops) de la Carrera de Especialización en Inteligencia Artificial (CEIA).
-
-El proyecto simula la infraestructura interna de una empresa ficticia ("ML Models and something more Inc.") que ofrece modelos de ML. 
-La plataforma utiliza Apache Airflow para orquestación de pipelines, MLflow para tracking de experimentos, MinIO como data lake (S3-compatible) y PostgreSQL como base de datos.
+# Trabajo Práctico de Operaciones de Aprendizaje Automático
 
 ### Equipo
+
 - Ronald Uthurralt
 - Luis David Díaz Charris
 - Juan Pablo Skobalski
 
-## Arquitectura
+### Caso de uso
 
-```
+Se crea una herramienta que sirva para medicos para poder predecir si 
+una persona tiene riesgo de tener un ACV o no. El modelo puede ser utilizado para:
+
+1. Clasificar nuevos pacientes según su probabilidad de stroke.
+2. Priorizar casos para screening o seguimiento preventivo.
+3. Asistir a equipos clínicos o de gestión con una señal temprana de riesgo.
+4. Exponer esa predicción desde una API para integrarla con otros sistemas.
+
+Desde el equipo de MLOps nos enfocamos en volver ese modelo reproducible,
+versionable y consumible, entrenarlo de manera orquestada, registrar métricas y
+artefactos, publicarlo en MLflow y servirlo a través de FastAPI y Streamlit.
+
+### Relación con el TP de Aprendizaje Automático
+
+Este repositorio toma como base el trabajo desarrollado en Aprendizaje Automatico, 
+donde comparamos distintos modelos para la predicción de accidentes cerebro vasculares
+y selecciona una versión final de `RandomForestClassifier` con ajuste de threshold.
+
+
+### Dataset y objetivo del servicio
+
+El proyecto utiliza el dataset clínico de stroke trabajado en Aprendizaje
+Automático.
+
+- Variables demográficas y clínicas del paciente.
+- Target binario `stroke`.
+- Dataset fuertemente desbalanceado.
+
+El objetivo del servicio es recibir los atributos de un paciente y devolver:
+
+- La probabilidad estimada de stroke.
+- La clase final según el threshold operativo.
+- La versión del modelo servida por la API.
+
+El flujo está preparado para entrenar directamente con el CSV usado en
+Aprendizaje Automático, ubicado en:
+
+- `data/healthcare-dataset-stroke-data.csv`
+
+Si ese archivo local no existe, el DAG puede usar como fallback una URL
+configurada por `STROKE_DATASET_URL`.
+
+### Arquitectura de alto nivel
+
+```text
 ┌───────────────────────────────────────────────────────────────┐
 │                       docker-compose                          │
 │                                                               │
@@ -27,7 +67,8 @@ La plataforma utiliza Apache Airflow para orquestación de pipelines, MLflow par
 │                  ▼                                            │
 │  ┌────────────────────────────────────────────────────┐       │
 │  │                    dags/                           │       │
-│  │       wine_quality_pipeline.py                     │       │
+│  │     stroke_prediction_pipeline.py                  │       │
+│  │     stroke_pipeline/*.py                           │       │
 │  └────────────────────┬───────────────────────────────┘       │
 │                       │ loguea experimentos                   │
 │                       ▼                                       │
@@ -36,7 +77,7 @@ La plataforma utiliza Apache Airflow para orquestación de pipelines, MLflow par
 │  │  (MLflow)   │   │   :5001     │   │  (S3) :9001 │          │
 │  └─────────────┘   └──────┬──────┘   └─────────────┘          │
 │                            │                                  │
-│                            │ carga modelo                     │
+│                            │ expone artefactos                │
 │                            ▼                                  │
 │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐          │
 │  │   Redis     │◄──│  FastAPI    │◄──│  Streamlit  │          │
@@ -46,129 +87,189 @@ La plataforma utiliza Apache Airflow para orquestación de pipelines, MLflow par
 └───────────────────────────────────────────────────────────────┘
 ```
 
-## Estructura del proyecto
-
-```
-tp_ml_ops/
-├── docker-compose.yml          # Definición de todos los servicios
-├── .env.example                # Template de variables de entorno
-├── .gitignore
-├── requirements.txt            # Dependencias Python (Airflow tasks)
-├── dockerfiles/
-│   ├── Dockerfile.airflow      # Imagen de Airflow + dependencias de ML
-│   ├── Dockerfile.mlflow       # Servidor MLflow
-│   ├── Dockerfile.fastapi      # API REST
-│   └── Dockerfile.streamlit    # Interfaz de usuario
-├── dags/
-│   └── wine_quality_pipeline.py  # DAG del pipeline de ML
-├── api/
-│   ├── main.py                 # Endpoints FastAPI
-│   └── requirements.txt
-├── streamlit/
-│   ├── app.py                  # UI Streamlit
-│   └── requirements.txt
-├── data/                       # Datos locales (no versionados)
-└── .github/
-    └── workflows/
-        └── ci.yml              # CI/CD con GitHub Actions
-```
-
-## Servicios
+### Servicios
 
 | Servicio | Puerto | Descripción |
 |---|---|---|
-| Airflow Webserver | [localhost:8080](http://localhost:8080) | UI para visualizar y monitorear DAGs |
-| Airflow Scheduler | interno | Programa y ejecuta las tareas según dependencias |
-| MLflow | [localhost:5001](http://localhost:5001) | Tracking de experimentos, parámetros, métricas y artefactos |
-| MinIO | [localhost:9001](http://localhost:9001) | Consola de administración del data lake (S3) |
-| FastAPI | [localhost:8800](http://localhost:8800) | API REST para predicciones del modelo |
-| Streamlit | [localhost:8501](http://localhost:8501) | Interfaz de usuario para predicciones |
-| Redis | localhost:6379 | Cache de predicciones |
+| Airflow Webserver | [localhost:8080](http://localhost:8080) | UI para monitorear y disparar el pipeline |
+| Airflow Scheduler | interno | Ejecuta las tareas del DAG |
+| MLflow | [localhost:5001](http://localhost:5001) | Tracking de experimentos, registry y artefactos |
+| MinIO | [localhost:9001](http://localhost:9001) | Consola del storage S3-compatible |
+| FastAPI | [localhost:8800](http://localhost:8800) | API REST para inferencia del modelo |
+| Streamlit | [localhost:8501](http://localhost:8501) | Interfaz para probar predicciones y ver métricas |
+| Redis | `localhost:6379` | Cache de predicciones |
 | PostgreSQL (MLflow) | interno | Backend store de MLflow |
-| PostgreSQL (Airflow) | interno | Metadata de Airflow |
+| PostgreSQL (Airflow) | interno | Metadata store de Airflow |
 
-## Modelo
+### Flujo end-to-end
 
-Se utiliza un RandomForestClassifier sobre el dataset Wine de scikit-learn (178 muestras, 13 features, 3 clases). El pipeline de entrenamiento se ejecuta como un DAG en Airflow con las siguientes tareas:
+El pipeline `stroke_prediction_pipeline` ejecuta las siguientes etapas:
 
-1. get_data — Descarga el dataset y lo sube a MinIO
-2. process_data — Elimina duplicados y nulos
-3. split_dataset — Separa en train (80%) y test (20%)
-4. train_model — Entrena el modelo y lo registra en MLflow (parámetros, métricas, artefactos)
-5. evaluate_model — Evalúa en test set y loguea métricas finales (accuracy, precision, recall, F1)
+1. `ensure_artifact_bucket`
+   Asegura que exista el bucket de MinIO usado para datasets y artefactos.
+2. `get_data`
+   Carga el CSV clínico desde `data/` y solo usa la URL configurada si no encuentra el archivo local.
+3. `process_data`
+   Elimina duplicados y normaliza columnas base para el entrenamiento.
+4. `split_dataset`
+   Genera conjuntos `train`, `validation` y `test` con partición estratificada.
+5. `train_model`
+   Entrena el pipeline final con preprocesamiento tabular, `SMOTE` y `RandomForestClassifier`.
+6. `evaluate_model`
+   Ajusta el threshold sobre validation y registra métricas finales sobre test.
+7. `reload_prediction_api`
+   Llama automáticamente al endpoint `/reload-model` para que la API quede sincronizada con el último modelo registrado.
 
-## Requisitos previos
+### Estructura del proyecto
 
-- [Docker](https://docs.docker.com/get-docker/) y [Docker Compose](https://docs.docker.com/compose/install/)
-- Git
+```text
+tp_ml_ops/
+├── docker-compose.yml
+├── .env.example
+├── requirements.txt
+├── data/
+│   └── .gitkeep
+├── dockerfiles/
+│   ├── Dockerfile.airflow
+│   ├── Dockerfile.mlflow
+│   ├── Dockerfile.fastapi
+│   └── Dockerfile.streamlit
+├── dags/
+│   ├── stroke_prediction_pipeline.py
+│   └── stroke_pipeline/
+│       ├── config.py
+│       ├── data_tasks.py
+│       ├── training_tasks.py
+│       ├── evaluation_tasks.py
+│       └── serving_tasks.py
+├── api/
+│   ├── api_config.py
+│   ├── main.py
+│   ├── model_service.py
+│   ├── requirements.txt
+│   └── schemas.py
+├── streamlit/
+│   ├── app.py
+│   └── requirements.txt
+└── .github/
+    └── workflows/
+        └── ci.yml
+```
 
-## Inicio rápido
+### Variables de entorno
+
+Crear el archivo `.env` a partir del ejemplo:
+
+```bash
+cp .env.example .env
+```
+
+Variables requeridas:
+
+- `PG_USER`
+- `PG_PASSWORD`
+- `PG_DATABASE`
+- `AIRFLOW_DB_USER`
+- `AIRFLOW_DB_PASSWORD`
+- `AIRFLOW_DB_NAME`
+- `MINIO_ROOT_USER`
+- `MINIO_ROOT_PASSWORD`
+- `MLFLOW_BUCKET_NAME`
+- `AIRFLOW_SECRET_KEY`
+
+Variable opcional:
+
+- `STROKE_DATASET_URL`
+
+### Inicio rápido
 
 1. Clonar el repositorio:
+
    ```bash
    git clone <repo-url>
    cd tp_ml_ops
    ```
 
-2. Crear el archivo de variables de entorno:
+2. Crear `.env`:
+
    ```bash
    cp .env.example .env
    ```
 
-3. Levantar los servicios:
+3. Ubicar el CSV del TP de Aprendizaje Automático en:
+
+   ```text
+   data/healthcare-dataset-stroke-data.csv
+   ```
+
+   Ese es ahora el camino principal de entrenamiento.
+
+4. Levantar la infraestructura:
+
    ```bash
    docker compose up --build -d
    ```
 
-4. Verificar que los servicios estén corriendo:
+5. Verificar servicios:
+
    ```bash
    docker compose ps
    ```
 
-5. Ejecutar el pipeline de entrenamiento:
-   - Ir a Airflow: http://localhost:8080 (usuario: `admin`, contraseña: `admin`)
-   - Activar el DAG `wine_quality_pipeline`
-   - Ejecutarlo manualmente con el botón "Trigger DAG"
+6. Abrir Airflow en [http://localhost:8080](http://localhost:8080)
 
-6. Usar la API de predicciones:
-   - Docs interactivos: http://localhost:8800/docs
-   - O usar Streamlit: http://localhost:8501
+   Credenciales por defecto:
 
-7. Ver experimentos en MLflow:
-   - http://localhost:5001
+   - usuario: `admin`
+   - contraseña: `admin`
 
-8. Para detener los servicios:
-   ```bash
-   docker compose down
-   ```
-   Para eliminar también los volúmenes (datos persistidos):
-   ```bash
-   docker compose down -v
-   ```
+7. Activar y ejecutar manualmente el DAG `stroke_prediction_pipeline`.
 
-## Estado del proyecto
+8. Esperar a que todas las tareas queden en verde.
 
-### Entrega 1 (Clases 1–4)
+   Cuando el DAG finaliza:
 
-- [x] Infraestructura dockerizada con Docker Compose
-- [x] Apache Airflow configurado (webserver + scheduler + PostgreSQL)
-- [x] MLflow configurado con backend en PostgreSQL y artefactos en MinIO (S3)
-- [x] MinIO como data lake S3-compatible
-- [x] DAG de pipeline de ML (get_data → process_data → split → train → evaluate)
-- [x] Integración del DAG con MLflow para logging de experimentos
+   - el bucket queda validado,
+   - el dataset procesado queda versionado en MinIO,
+   - el modelo final queda registrado en MLflow,
+   - la API recarga automáticamente la última versión.
 
-### Entrega final
+9. Consumir predicciones:
 
-- [x] API REST con FastAPI para servir predicciones del modelo
-- [x] Cache de predicciones con Redis
-- [x] Interfaz de usuario con Streamlit
-- [x] CI/CD con GitHub Actions (lint + build)
+   - FastAPI docs: [http://localhost:8800/docs](http://localhost:8800/docs)
+   - Streamlit: [http://localhost:8501](http://localhost:8501)
 
-## Conceptos aplicados
+10. Ver métricas y runs:
 
-- Orquestación con Airflow: los pipelines de ML se definen como DAGs con tareas encadenadas y dependencias explícitas. Se usa `@task.virtualenv` para aislar dependencias de cada tarea.
-- Tracking de experimentos con MLflow: cada ejecución registra parámetros, métricas y artefactos (modelo, scaler) de forma centralizada en el Model Registry.
-- Data lake con MinIO: los datos y artefactos se almacenan en storage S3-compatible, separando almacenamiento de cómputo.
-- Serving con FastAPI: el modelo se carga desde MLflow Registry y se expone vía API REST. Las predicciones se cachean en Redis para evitar cómputo redundante.
-- Infraestructura como código: toda la infraestructura se define en `docker-compose.yml` y es reproducible con un solo comando.
-- CI/CD: GitHub Actions ejecuta linting y build de imágenes Docker en cada push/PR.
+   - MLflow: [http://localhost:5001](http://localhost:5001)
+
+### Qué se debería ver en MLflow
+
+- El experimento `stroke_prediction`.
+- Al menos un run de entrenamiento.
+- Parámetros del modelo y del threshold.
+- Métricas de validation y test.
+- Artefactos de evaluación.
+- El modelo registrado `stroke_prediction_model`.
+
+### Notas
+
+- El bucket puede crearse durante el bootstrap por `create_s3_bucket`, pero el DAG también lo valida con `ensure_artifact_bucket`.
+- El DAG principal quedó reducido a la orquestación, mientras que las tareas se separaron en módulos dentro de `dags/stroke_pipeline/`.
+- Si existe una copia local del dataset en `data/`, el entrenamiento usa ese archivo como fuente principal.
+- `STROKE_DATASET_URL` queda solamente como fallback para ejecuciones sin el CSV local.
+- La API no requiere recarga manual después del entrenamiento: el DAG ejecuta `/reload-model` al finalizar.
+- Streamlit muestra la fecha del último run en formato legible.
+- El sistema despliega el modelo final seleccionado del TP, no toda la lógica exploratoria del notebook.
+
+### Para detener el stack
+
+```bash
+docker compose down
+```
+
+Para eliminar también los volúmenes persistidos:
+
+```bash
+docker compose down -v
+```

@@ -1,6 +1,7 @@
 pandas
 numpy
-scikit-learn
+scikit-learn==1.7.2
+imbalanced-learn==0.14.0
 matplotlib
 mlflow==2.12.2
 openpyxl
