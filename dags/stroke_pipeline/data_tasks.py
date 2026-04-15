@@ -1,11 +1,6 @@
 from airflow.decorators import task
 
-from stroke_pipeline.config import (
-    DATA_REQUIREMENTS,
-    DEFAULT_DATASET_LOCAL_PATH,
-    DEFAULT_DATASET_URL,
-    MODEL_REQUIREMENTS,
-)
+from stroke_pipeline.config import DATA_REQUIREMENTS, MODEL_REQUIREMENTS
 
 
 def build_ensure_artifact_bucket_task():
@@ -40,22 +35,27 @@ def build_get_data_task():
     """Devuelve la tarea que carga el dataset base desde disco o URL."""
 
     @task.virtualenv(task_id="get_data", requirements=DATA_REQUIREMENTS)
-    def get_data(
-        bucket_name: str,
-        default_dataset_path: str = DEFAULT_DATASET_LOCAL_PATH,
-        default_dataset_url: str = DEFAULT_DATASET_URL,
-    ) -> str:
+    def get_data(bucket_name: str) -> str:
         import os
 
         import boto3
         import pandas as pd
 
-        dataset_path = os.getenv("STROKE_DATASET_LOCAL_PATH", default_dataset_path)
-        dataset_url = os.getenv("STROKE_DATASET_URL", default_dataset_url)
+        dataset_path = os.getenv(
+            "STROKE_DATASET_LOCAL_PATH",
+            "/opt/project/data/healthcare-dataset-stroke-data.csv",
+        )
+        dataset_url = os.getenv(
+            "STROKE_DATASET_URL",
+            "https://gist.githubusercontent.com/aishwarya8615/"
+            "d2107f828d3f904839cbcb7eaa85bd04/raw/healthcare-dataset-stroke-data.csv",
+        )
 
         if os.path.exists(dataset_path):
+            print(f"Using local dataset: {dataset_path}")
             df = pd.read_csv(dataset_path)
         else:
+            print(f"Using remote dataset: {dataset_url}")
             df = pd.read_csv(dataset_url)
 
         local_path = "/tmp/stroke_raw.csv"
