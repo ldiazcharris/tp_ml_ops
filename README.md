@@ -8,7 +8,7 @@
 
 ### Caso de uso
 
-Se crea una herramienta que sirva para medicos para poder predecir si 
+Se crea una herramienta, como apoyo a los médicos, que permita predecir si 
 una persona tiene riesgo de tener un ACV o no. El modelo puede ser utilizado para:
 
 1. Clasificar nuevos pacientes según su probabilidad de stroke.
@@ -22,7 +22,7 @@ artefactos, publicarlo en MLflow y servirlo a través de FastAPI y Streamlit.
 
 El threshold seleccionado en la materia de Aprendizaje automatico, 
 es simplemente figurativo y el que mejor resultado nos daba, de todas maneras
-la herramienta estaría hecha para que el médico tome la decision.
+la herramienta fue concebida como apoyo diagnóstico, para que un médico tome la decision.
 
 ### Relación con el TP de Aprendizaje Automático
 
