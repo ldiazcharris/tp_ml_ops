@@ -22,7 +22,7 @@ artefactos, publicarlo en MLflow y servirlo a través de FastAPI y Streamlit.
 
 El threshold seleccionado en la materia de Aprendizaje automatico, 
 es simplemente figurativo y el que mejor resultado nos daba, de todas maneras
-la herramienta estria hecha para que el médico tome la decision.
+la herramienta estaría hecha para que el médico tome la decision.
 
 ### Relación con el TP de Aprendizaje Automático
 
@@ -247,7 +247,7 @@ Variable opcional:
 
    - MLflow: [http://localhost:5001](http://localhost:5001)
 
-### Qué se debería ver en MLflow
+### ¿Qué se debería ver en MLflow?
 
 - El experimento `stroke_prediction`.
 - Al menos un run de entrenamiento.
